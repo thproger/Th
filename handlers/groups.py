@@ -5,7 +5,7 @@ from aiogram.fsm.state import State, StatesGroup
 
 from database import db
 from config import ROLE_LABELS
-from permissions import has_role, role_level, ROLE_ADMIN, ROLE_GROUP_LEADER, ROLE_MEMBER
+from permissions import has_role, ROLE_ADMIN, ROLE_GROUP_LEADER
 from keyboards import users_list_keyboard, group_member_keyboard, BTN_MY_GROUP, BTN_ALL_GROUPS
 
 router = Router()
@@ -25,50 +25,88 @@ async def my_group(message: Message):
         await message.answer("❌ Немає доступу.")
         return
 
-    group = await db.get_group_by_leader(message.from_user.id)
-    members = await db.get_group_members(message.from_user.id)
+    groups = await db.get_groups_by_leader(message.from_user.id)
+    if not groups:
+        await message.answer("📭 Ви ще не керуєте жодною групою.")
+        return
 
+    lines = [f"👥 <b>Ваші групи ({len(groups)})</b>\n"]
+    buttons = []
+    for group in groups:
+        members_count = len(group.get("members", []))
+        lines.append(f"• <b>{group.get('name', '?')}</b> | Учасників: {members_count}")
+        buttons.append([
+            InlineKeyboardButton(
+                text=f"⚙️ {group.get('name', '?')[:35]}",
+                callback_data=f"leader_manage_group:{str(group['_id'])}",
+            )
+        ])
+
+    await message.answer("\n".join(lines), parse_mode="HTML")
+    await message.answer(
+        "Оберіть групу для керування:",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons[:90]),
+    )
+
+
+@router.callback_query(F.data.startswith("leader_manage_group:"))
+async def leader_manage_group(callback: CallbackQuery):
+    user = await db.get_user(callback.from_user.id)
+    if not user or not has_role(user.get("role"), ROLE_GROUP_LEADER):
+        await callback.answer("❌ Немає доступу.", show_alert=True)
+        return
+
+    group_id = callback.data.split(":")[1]
+    group = await db.get_group_by_id(group_id)
+    if not group or group.get("leader_id") != callback.from_user.id:
+        await callback.answer("Це не ваша група.", show_alert=True)
+        return
+    members = await db.get_group_members_by_group_id(group_id)
     if not members:
         member_text = "  (порожньо)"
     else:
-        lines = []
-        for m in members:
-            name = m.get("full_name") or m.get("username") or str(m["telegram_id"])
-            lines.append(f"  • {name} | {ROLE_LABELS.get(m.get('role'), 'Без ролі')}")
-        member_text = "\n".join(lines)
-
-    group_name = group.get("name", "Моя група") if group else "Моя група"
-    await message.answer(f"👥 <b>{group_name}</b>\nУчасників: {len(members)}\n\n{member_text}", parse_mode="HTML")
-
-    buttons = [[InlineKeyboardButton(text="➕ Додати учасника", callback_data="group_add_member")]]
+        member_text = "\n".join([
+            f"  • {(m.get('full_name') or m.get('username') or str(m['telegram_id']))} | "
+            f"{ROLE_LABELS.get(m.get('role'), 'Без ролі')}"
+            for m in members
+        ])
+    buttons = [[InlineKeyboardButton(text="➕ Додати учасника", callback_data=f"group_add_member:{group_id}")]]
     if members:
-        buttons.append([InlineKeyboardButton(text="➖ Видалити учасника", callback_data="group_remove_member")])
+        buttons.append([InlineKeyboardButton(text="➖ Видалити учасника", callback_data=f"group_remove_member:{group_id}")])
+    await callback.message.edit_text(
+        f"👥 <b>{group.get('name', '?')}</b>\nУчасників: {len(members)}\n\n{member_text}",
+        parse_mode="HTML",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons),
+    )
+    await callback.answer()
 
-    await message.answer("Управління групою:", reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
 
-
-@router.callback_query(F.data == "group_add_member")
+@router.callback_query(F.data.startswith("group_add_member:"))
 async def start_add_member(callback: CallbackQuery, state: FSMContext):
     user = await db.get_user(callback.from_user.id)
     if not user or not has_role(user.get("role"), ROLE_GROUP_LEADER):
         await callback.answer("❌ Немає доступу.", show_alert=True)
         return
 
+    group_id = callback.data.split(":")[1]
+    group = await db.get_group_by_id(group_id)
+    if not group or group.get("leader_id") != callback.from_user.id:
+        await callback.answer("Це не ваша група.", show_alert=True)
+        return
+
     all_users = await db.get_all_users()
-    group = await db.get_group_by_leader(callback.from_user.id)
-    current_members = group.get("members", []) if group else []
+    current_members = set(group.get("members", []))
 
     available = [
         u for u in all_users
-        if u["telegram_id"] != callback.from_user.id
-        and role_level(u.get("role")) == role_level(ROLE_MEMBER)
-        and u["telegram_id"] not in current_members
+        if u["telegram_id"] not in current_members
     ]
 
     if not available:
-        await callback.answer("❌ Немає доступних рядових для додавання.", show_alert=True)
+        await callback.answer("❌ Немає доступних користувачів для додавання.", show_alert=True)
         return
 
+    await state.update_data(active_group_id=group_id)
     await state.set_state(GroupStates.adding_member)
     await callback.message.answer(
         "👤 Оберіть користувача:",
@@ -90,12 +128,14 @@ async def add_member_confirmed(callback: CallbackQuery, state: FSMContext):
         await callback.answer("Користувача не знайдено.", show_alert=True)
         return
 
-    group = await db.get_group_by_leader(callback.from_user.id)
-    if not group:
-        leader = await db.get_user(callback.from_user.id)
-        await db.create_group(callback.from_user.id, f"Група {leader.get('full_name', '')}")
+    data = await state.get_data()
+    group_id = data.get("active_group_id")
+    group = await db.get_group_by_id(group_id) if group_id else None
+    if not group or group.get("leader_id") != callback.from_user.id:
+        await callback.answer("Помилка: групу не знайдено.", show_alert=True)
+        return
 
-    await db.add_member_to_group(callback.from_user.id, member_id)
+    await db.add_member_to_group_by_id(group_id, member_id)
     await state.clear()
 
     name = member.get("full_name") or member.get("username") or str(member_id)
@@ -103,18 +143,25 @@ async def add_member_confirmed(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
 
 
-@router.callback_query(F.data == "group_remove_member")
+@router.callback_query(F.data.startswith("group_remove_member:"))
 async def start_remove_member(callback: CallbackQuery, state: FSMContext):
     user = await db.get_user(callback.from_user.id)
     if not user or not has_role(user.get("role"), ROLE_GROUP_LEADER):
         await callback.answer("❌ Немає доступу.", show_alert=True)
         return
 
-    members = await db.get_group_members(callback.from_user.id)
+    group_id = callback.data.split(":")[1]
+    group = await db.get_group_by_id(group_id)
+    if not group or group.get("leader_id") != callback.from_user.id:
+        await callback.answer("Це не ваша група.", show_alert=True)
+        return
+
+    members = await db.get_group_members_by_group_id(group_id)
     if not members:
         await callback.answer("Група порожня.", show_alert=True)
         return
 
+    await state.update_data(active_group_id=group_id)
     await state.set_state(GroupStates.removing_member)
     await callback.message.answer("👤 Оберіть учасника:", reply_markup=group_member_keyboard(members, "remove_from_group"))
     await callback.answer()
@@ -128,7 +175,13 @@ async def remove_member_confirmed(callback: CallbackQuery, state: FSMContext):
         return
 
     member_id = int(callback.data.split(":")[1])
-    await db.remove_member_from_group(callback.from_user.id, member_id)
+    data = await state.get_data()
+    group_id = data.get("active_group_id")
+    group = await db.get_group_by_id(group_id) if group_id else None
+    if not group or group.get("leader_id") != callback.from_user.id:
+        await callback.answer("Помилка: групу не знайдено.", show_alert=True)
+        return
+    await db.remove_member_from_group_by_id(group_id, member_id)
     await state.clear()
     await callback.message.edit_text("✅ Учасника видалено з групи.")
     await callback.answer()

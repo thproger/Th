@@ -175,8 +175,8 @@ async def set_role_handler(callback: CallbackQuery, state: FSMContext):
     await db.update_user_role(target_id, role)
 
     if role_level(role) == role_level(ROLE_GROUP_LEADER):
-        existing = await db.get_group_by_leader(target_id)
-        if not existing:
+        groups = await db.get_groups_by_leader(target_id)
+        if not groups:
             target = await db.get_user(target_id)
             gname = f"Група {target.get('full_name', target_id)}"
             await db.create_group(target_id, gname)
