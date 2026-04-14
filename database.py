@@ -4,39 +4,34 @@ from config import MONGO_URI, DB_NAME
 
 DEFAULT_RECRUITMENT_TREE = [
     {
-        "name": "Офлайн",
+        "name": "🏢 ОФЛАЙН",
         "kind": "category",
         "children": [
-            {"name": "Керівні посади", "kind": "group", "children": [
-                {"name": "Куратор літературників", "kind": "position"},
-                {"name": "Заміна куратора літературників", "kind": "position"},
-                {"name": "Менеджер літературника", "kind": "position"},
-                {"name": "Куратор лекцій", "kind": "position"},
-                {"name": "Менеджер лекції", "kind": "position"},
-                {"name": "Ідейник", "kind": "position"},
-                {"name": "Заміна куратора лекцій", "kind": "position"},
-            ]}
+            {"name": "Куратор літературників", "kind": "position"},
+            {"name": "Заміна куратора літературників", "kind": "position"},
+            {"name": "Куратор лекцій", "kind": "position"},
+            {"name": "Ідейник", "kind": "position"},
+            {"name": "Заміна куратора лекцій", "kind": "position"},
         ],
     },
     {
-        "name": "Онлайн",
+        "name": "🌐 ОНЛАЙН",
         "kind": "category",
         "children": [
             {
-                "name": "Цвіт",
+                "name": "🌸 Цвіт",
                 "kind": "group",
                 "children": [
                     {"name": "Керівні посади", "kind": "group", "children": [
                         {"name": "Менеджер виконання", "kind": "position"},
                         {"name": "Менеджер постів", "kind": "position"},
-                        {"name": "Менеджер конкурсу", "kind": "position"},
                         {"name": "Відповідальний за рекламу", "kind": "position"},
                         {"name": "Відповідальний за Твітер", "kind": "position"},
                         {"name": "Відповідальний за Тік-Ток", "kind": "position"},
-                        {"name": "Фанрейзер", "kind": "position"},
+                        {"name": "Фандрейзер", "kind": "position"},
                         {"name": "Заміна відповідальному за ЦВІТ", "kind": "position"},
                         {"name": "Заміна куратору конкурсів", "kind": "position"},
-                        {"name": "Заміна куратору Вірш дня", "kind": "position"},
+                        {"name": "Заміна куратору \"Вірш дня\"", "kind": "position"},
                     ]},
                     {"name": "Посади", "kind": "group", "children": [
                         {"name": "Редактор", "kind": "position"},
@@ -46,40 +41,51 @@ DEFAULT_RECRUITMENT_TREE = [
                         {"name": "Декламатор", "kind": "position"},
                         {"name": "Історик", "kind": "position"},
                         {"name": "Лектор", "kind": "position"},
-                        {"name": "Організатор онлайн заходу", "kind": "position"},
+                        {"name": "Організатор онлайн-заходу", "kind": "position"},
                         {"name": "Контакт-менеджер", "kind": "position"},
-                    ]},
-                    {"name": "Відповідальний за рубрику", "kind": "group", "children": [
-                        {"name": "Письменницькі поради", "kind": "position"},
-                        {"name": "Цікавий факт", "kind": "position"},
-                        {"name": "Спогади поряд", "kind": "position"},
-                    ]},
-                    {"name": "Команда Віршу дня", "kind": "group", "children": [
-                        {"name": "Менеджер боту", "kind": "position"},
-                        {"name": "Відповідальний за збір віршів", "kind": "position"},
-                        {"name": "Відповідальний за голосовалку", "kind": "position"},
-                        {"name": "Журі", "kind": "position"},
-                    ]},
-                    {"name": "Блогер", "kind": "group", "children": [
-                        {"name": "Інстаграм", "kind": "position"},
-                        {"name": "Тредс", "kind": "position"},
-                        {"name": "Твітер", "kind": "position"},
-                        {"name": "Тік-Ток", "kind": "position"},
-                        {"name": "Ютуб", "kind": "position"},
+                        {"name": "Відповідальний за рубрику", "kind": "group", "children": [
+                            {"name": "Письменницькі поради", "kind": "position"},
+                            {"name": "Цікавий факт", "kind": "position"},
+                            {"name": "Спогади поряд", "kind": "position"},
+                        ]},
+                        {"name": "Команда \"Віршу дня\"", "kind": "group", "children": [
+                            {"name": "Менеджер боту", "kind": "position"},
+                            {"name": "Відповідальний за збір віршів", "kind": "position"},
+                            {"name": "Відповідальний за голосовалку", "kind": "position"},
+                            {"name": "Журі", "kind": "position"},
+                        ]},
+                        {"name": "Блогер", "kind": "group", "children": [
+                            {"name": "Інстаграм", "kind": "position"},
+                            {"name": "Тредс", "kind": "position"},
+                            {"name": "Твітер", "kind": "position"},
+                            {"name": "Тік-Ток", "kind": "position"},
+                            {"name": "Ютуб", "kind": "position"},
+                        ]},
                     ]},
                 ],
             },
             {
-                "name": "СадКрафт",
+                "name": "🎮 СадКрафт (GardenCraft)",
                 "kind": "group",
                 "children": [
                     {"name": "Керівні посади", "kind": "group", "children": [
                         {"name": "Відповідальний за GardenCraft", "kind": "position"},
-                        {"name": "Відповідальний за тех складову", "kind": "position"},
+                        {"name": "Відповідальний за тех. складову", "kind": "position"},
                         {"name": "Адмін Діскорда", "kind": "position"},
                         {"name": "Адмін тгк", "kind": "position"},
                         {"name": "Відповідальний за ігрову складову", "kind": "position"},
-                    ]}
+                    ]},
+                    {"name": "Посади", "kind": "group", "children": [
+                        {"name": "Ідейник", "kind": "position"},
+                        {"name": "Менеджер постів", "kind": "position"},
+                        {"name": "Організатор івентів", "kind": "position"},
+                        {"name": "Програміст", "kind": "position"},
+                        {"name": "Блогер", "kind": "group", "children": [
+                            {"name": "Інстаграм", "kind": "position"},
+                            {"name": "Тредс", "kind": "position"},
+                            {"name": "Ютуб", "kind": "position"},
+                        ]},
+                    ]},
                 ],
             },
         ],
@@ -274,20 +280,23 @@ class Database:
     # ───────────────── RECRUITMENT ─────────────────
 
     async def ensure_default_recruitment_tree(self):
-        count = await self.db.recruitment_nodes.count_documents({})
-        if count > 0:
-            return
-
         async def insert_branch(node: dict, parent_id=None):
-            doc = {
-                "name": node["name"],
-                "kind": node["kind"],
-                "parent_id": parent_id,
-                "created_at": datetime.utcnow(),
-            }
-            result = await self.db.recruitment_nodes.insert_one(doc)
+            existing = await self.db.recruitment_nodes.find_one(
+                {"name": node["name"], "parent_id": parent_id}
+            )
+            if existing:
+                node_id = existing["_id"]
+            else:
+                doc = {
+                    "name": node["name"],
+                    "kind": node["kind"],
+                    "parent_id": parent_id,
+                    "created_at": datetime.utcnow(),
+                }
+                result = await self.db.recruitment_nodes.insert_one(doc)
+                node_id = result.inserted_id
             for child in node.get("children", []):
-                await insert_branch(child, result.inserted_id)
+                await insert_branch(child, node_id)
 
         for root in DEFAULT_RECRUITMENT_TREE:
             await insert_branch(root)

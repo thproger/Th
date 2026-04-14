@@ -281,7 +281,7 @@ async def recruit_sadist_position(message: Message, state: FSMContext):
     await send_application_to_reviewers(message, notify_text)
     await state.clear()
     await message.answer(
-        "Чекайте поки вам напише Зеленка, та готуйтесь до пробного завдання.",
+        "Вітаю тепер ви також катуватимете людей!\nА тепер йдіть працювати.",
         reply_markup=main_menu_keyboard(role),
     )
 
