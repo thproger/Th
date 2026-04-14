@@ -4,6 +4,7 @@ from aiohttp import web
 import os
 from aiogram import Bot, Dispatcher
 from aiogram.fsm.storage.memory import MemoryStorage
+import aiohttp
 
 from config import BOT_TOKEN
 from database import db
