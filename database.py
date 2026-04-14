@@ -209,6 +209,93 @@ class Database:
         cursor = self.db.groups.find()
         return await cursor.to_list(length=None)
 
+    async def create_group_with_members(self, leader_id: int, name: str, members: list[int] | None = None):
+        group = {
+            "leader_id": leader_id,
+            "name": name,
+            "members": members or [],
+            "created_at": datetime.utcnow(),
+        }
+        result = await self.db.groups.insert_one(group)
+        group["_id"] = result.inserted_id
+        if members:
+            await self.db.users.update_many(
+                {"telegram_id": {"$in": members}},
+                {"$set": {"group_leader_id": leader_id}},
+            )
+        return group
+
+    async def get_group_by_name(self, name: str):
+        return await self.db.groups.find_one({"name": name})
+
+    async def rename_group(self, group_id: str, new_name: str):
+        from bson import ObjectId
+        await self.db.groups.update_one(
+            {"_id": ObjectId(str(group_id))},
+            {"$set": {"name": new_name}},
+        )
+
+    async def set_group_leader(self, group_id: str, new_leader_id: int):
+        from bson import ObjectId
+        group = await self.get_group_by_id(group_id)
+        if not group:
+            return
+        await self.db.groups.update_one(
+            {"_id": ObjectId(str(group_id))},
+            {"$set": {"leader_id": new_leader_id}},
+        )
+        members = group.get("members", [])
+        if members:
+            await self.db.users.update_many(
+                {"telegram_id": {"$in": members}},
+                {"$set": {"group_leader_id": new_leader_id}},
+            )
+
+    async def add_member_to_group_by_id(self, group_id: str, member_telegram_id: int):
+        from bson import ObjectId
+        group = await self.get_group_by_id(group_id)
+        if not group:
+            return
+        await self.db.groups.update_one(
+            {"_id": ObjectId(str(group_id))},
+            {"$addToSet": {"members": member_telegram_id}},
+        )
+        await self.db.users.update_one(
+            {"telegram_id": member_telegram_id},
+            {"$set": {"group_leader_id": group["leader_id"]}},
+        )
+
+    async def remove_member_from_group_by_id(self, group_id: str, member_telegram_id: int):
+        from bson import ObjectId
+        await self.db.groups.update_one(
+            {"_id": ObjectId(str(group_id))},
+            {"$pull": {"members": member_telegram_id}},
+        )
+        await self.db.users.update_one(
+            {"telegram_id": member_telegram_id},
+            {"$unset": {"group_leader_id": ""}},
+        )
+
+    async def get_group_members_by_group_id(self, group_id: str):
+        group = await self.get_group_by_id(group_id)
+        if not group or not group.get("members"):
+            return []
+        cursor = self.db.users.find({"telegram_id": {"$in": group["members"]}})
+        return await cursor.to_list(length=None)
+
+    async def delete_group(self, group_id: str):
+        from bson import ObjectId
+        group = await self.get_group_by_id(group_id)
+        if not group:
+            return
+        members = group.get("members", [])
+        if members:
+            await self.db.users.update_many(
+                {"telegram_id": {"$in": members}},
+                {"$unset": {"group_leader_id": ""}},
+            )
+        await self.db.groups.delete_one({"_id": ObjectId(str(group_id))})
+
     # ───────────────── TASKS ─────────────────
 
     async def create_task(self, creator_id: int, assignee_id: int,
