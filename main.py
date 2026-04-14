@@ -1,5 +1,7 @@
 import asyncio
 import logging
+from aiohttp import web
+import os
 from aiogram import Bot, Dispatcher
 from aiogram.fsm.storage.memory import MemoryStorage
 
@@ -14,7 +16,20 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+async def health_check(request):
+    return web.Response(text="Bot is alive!")
+
 async def main():
+    app = web.Application()
+    app.router.add_get('/', health_check)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    
+    port = int(os.environ.get("PORT", 10000))
+    site = web.TCPSite(runner, '0.0.0.0', port)
+    await site.start()
+    print(f"Фейковий сервер запущено на порту {port}")
+
     await db.connect()
     await db.create_indexes()
     logger.info("Connected to MongoDB")
