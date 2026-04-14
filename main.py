@@ -15,6 +15,20 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+async def keep_alive(url):
+    # Використовуємо одну сесію для ефективності
+    async with aiohttp.ClientSession() as session:
+        while True:
+            try:
+                async with session.get(url) as response:
+                    # Можна розкоментувати для відладки:
+                    # print(f"Ping success: {response.status}")
+                    pass
+            except Exception as e:
+                print(f"Ping error: {e}")
+            
+            # Чекаємо 50 секунд перед наступним запитом
+            await asyncio.sleep(50)
 
 async def health_check(request):
     return web.Response(text="Bot is alive!")
@@ -29,6 +43,10 @@ async def main():
     site = web.TCPSite(runner, '0.0.0.0', port)
     await site.start()
     print(f"Фейковий сервер запущено на порту {port}")
+    url = "https://th-nph3.onrender.com"
+    asyncio.create_task(keep_alive(url))
+    
+    print("Бот запущений, анти-сон активовано!")
 
     await db.connect()
     await db.create_indexes()
