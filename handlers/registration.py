@@ -39,19 +39,13 @@ class RecruitAdminStates(StatesGroup):
     waiting_parent_for_position = State()
     waiting_name = State()
 
-WELCOME_NEW = """👋 <b>Вітаю в Task Manager Bot!</b>
-
-Це бот для управління завданнями в команді.
+WELCOME_NEW = """👋 <b>Вітаю!</b>
 
 Щоб почати, введи своє ім'я або псевдо."""
 
-WELCOME_NO_ROLE = """👋 Ти вже зареєстрований, але роль ще не призначено.
+WELCOME_NO_ROLE = """👋 Ти вже зареєстрований.
 
-⏳ Зачекай, поки адміністратор призначить роль.
-
-<b>Команди:</b>
-/start — оновити меню
-/me — переглянути профіль"""
+Оберіть, будь ласка, формат подачі заявки."""
 
 WELCOME_BACK = """👋 З поверненням, <b>{name}</b>!
 Роль: {role}
@@ -69,6 +63,7 @@ async def cmd_start(message: Message, state: FSMContext):
         role = user.get("role")
         if not role:
             await message.answer(WELCOME_NO_ROLE, parse_mode="HTML")
+            await send_recruit_flow_prompt(message, state)
             return
 
         await message.answer(
@@ -101,12 +96,17 @@ async def process_name(message: Message, state: FSMContext):
         username=message.from_user.username,
         full_name=full_name,
     )
-    await state.clear()
-    await message.answer(
-        f"✅ Реєстрацію завершено!\nІм'я: <b>{full_name}</b>\n\n"
-        "⏳ Зачекай, поки адміністратор призначить тобі роль.",
-        parse_mode="HTML",
-    )
+    await message.answer(f"✅ Реєстрацію завершено!\nІм'я: <b>{full_name}</b>", parse_mode="HTML")
+    await send_recruit_flow_prompt(message, state)
+
+
+async def send_recruit_flow_prompt(message: Message, state: FSMContext):
+    buttons = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🌿 САДист", callback_data="recruit_flow:sadist")],
+        [InlineKeyboardButton(text="🤝 Приєднатися до команди", callback_data="recruit_flow:team")],
+    ])
+    await state.set_state(RecruitFlowStates.choosing_flow)
+    await message.answer("Оберіть варіант:", reply_markup=buttons)
 
 
 @router.message(Command("me"))
@@ -198,12 +198,7 @@ async def set_role_handler(callback: CallbackQuery, state: FSMContext):
 @router.message(F.text == BTN_JOIN_TEAM)
 async def join_team_start(message: Message, state: FSMContext):
     await state.clear()
-    buttons = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🌿 САДист", callback_data="recruit_flow:sadist")],
-        [InlineKeyboardButton(text="🤝 Приєднатися до команди", callback_data="recruit_flow:team")],
-    ])
-    await state.set_state(RecruitFlowStates.choosing_flow)
-    await message.answer("Оберіть варіант:", reply_markup=buttons)
+    await send_recruit_flow_prompt(message, state)
 
 
 @router.callback_query(F.data.startswith("recruit_flow:"), RecruitFlowStates.choosing_flow)
