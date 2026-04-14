@@ -266,12 +266,17 @@ async def admin_group_pick_leader(callback: CallbackQuery, state: FSMContext):
         await callback.answer("❌ Немає доступу.", show_alert=True)
         return
     leader_id = int(callback.data.split(":")[1])
+    user = await db.get_user(leader_id)
+    if not user:
+        await callback.answer("Користувача не знайдено.", show_alert=True)
+        return
     data = await state.get_data()
     group_name = data.get("new_group_name")
     if not group_name:
         await callback.answer("Помилка стану.", show_alert=True)
         return
-    await db.update_user_role(leader_id, ROLE_GROUP_LEADER)
+    if has_role(user.get("role"), ROLE_MEMBER):
+        await db.update_user_role(leader_id, ROLE_GROUP_LEADER)
     await db.create_group(leader_id, group_name)
     await state.clear()
     await callback.message.edit_text(f"✅ Групу <b>{group_name}</b> створено.", parse_mode="HTML")
