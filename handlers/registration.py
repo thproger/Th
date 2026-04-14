@@ -115,7 +115,23 @@ async def cmd_me(message: Message):
     if not user:
         await message.answer("Ти ще не зареєстрований. Введи /start")
         return
-    await message.answer(format_user(user), parse_mode="HTML")
+    profile_text = format_user(user)
+    leader_groups = await db.get_groups_by_leader(message.from_user.id)
+    member_groups = await db.get_groups_with_member(message.from_user.id)
+
+    if leader_groups:
+        leader_names = ", ".join([g.get("name", "?") for g in leader_groups])
+        profile_text += f"\n\n👑 Керуєш групами ({len(leader_groups)}):\n{leader_names}"
+    else:
+        profile_text += "\n\n👑 Керуєш групами: немає"
+
+    if member_groups:
+        member_names = ", ".join([g.get("name", "?") for g in member_groups])
+        profile_text += f"\n\n👥 Учасник груп ({len(member_groups)}):\n{member_names}"
+    else:
+        profile_text += "\n\n👥 Учасник груп: немає"
+
+    await message.answer(profile_text, parse_mode="HTML")
 
 
 @router.message(F.text == BTN_MANAGE_USERS)

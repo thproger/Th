@@ -224,6 +224,18 @@ class Database:
     async def get_group_by_name(self, name: str):
         return await self.db.groups.find_one({"name": name})
 
+    async def get_groups_with_member(self, member_telegram_id: int):
+        cursor = self.db.groups.find({"members": member_telegram_id}).sort("created_at", -1)
+        return await cursor.to_list(length=None)
+
+    async def get_user_groups(self, telegram_id: int):
+        leader_groups = await self.get_groups_by_leader(telegram_id)
+        member_groups = await self.get_groups_with_member(telegram_id)
+        merged = {}
+        for group in leader_groups + member_groups:
+            merged[str(group["_id"])] = group
+        return list(merged.values())
+
     async def rename_group(self, group_id: str, new_name: str):
         from bson import ObjectId
         await self.db.groups.update_one(
