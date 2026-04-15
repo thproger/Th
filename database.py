@@ -24,7 +24,6 @@ DEFAULT_RECRUITMENT_TREE = [
                 {"name": "Програміст", "kind": "position"},
                 {"name": "Інформатор", "kind": "position"},
                 {"name": "Декламатор", "kind": "position"},
-                {"name": "Історик", "kind": "position"},
                 {"name": "Лектор", "kind": "position"},
                 {"name": "Організатор онлайн-заходу", "kind": "position"},
                 {"name": "Контакт-менеджер", "kind": "position"},
@@ -333,39 +332,10 @@ class Database:
     # ───────────────── RECRUITMENT ─────────────────
 
     async def ensure_default_recruitment_tree(self):
-        def _flatten_tree(nodes: list[dict], parent_path: str = "") -> list[tuple[str, str, str]]:
-            flat: list[tuple[str, str, str]] = []
-            for node in nodes:
-                current_path = f"{parent_path}/{node['name']}" if parent_path else node["name"]
-                flat.append((current_path, node["kind"], parent_path))
-                flat.extend(_flatten_tree(node.get("children", []), current_path))
-            return flat
-
-        async def _load_existing_tree() -> list[tuple[str, str, str]]:
-            nodes = await self.db.recruitment_nodes.find().to_list(length=None)
-            by_parent: dict[str | None, list[dict]] = {}
-            for node in nodes:
-                parent_id = str(node["parent_id"]) if node.get("parent_id") else None
-                by_parent.setdefault(parent_id, []).append(node)
-
-            result: list[tuple[str, str, str]] = []
-
-            def walk(parent_id: str | None, parent_path: str = ""):
-                for node in sorted(by_parent.get(parent_id, []), key=lambda item: item["name"]):
-                    current_path = f"{parent_path}/{node['name']}" if parent_path else node["name"]
-                    result.append((current_path, node["kind"], parent_path))
-                    walk(str(node["_id"]), current_path)
-
-            walk(None)
-            return result
-
-        expected_tree = sorted(_flatten_tree(DEFAULT_RECRUITMENT_TREE))
-        existing_tree = sorted(await _load_existing_tree())
-
-        if existing_tree and existing_tree == expected_tree:
+        existing_count = await self.db.recruitment_nodes.count_documents({})
+        if existing_count > 0:
+            await self.db.recruitment_nodes.delete_many({"name": {"$in": ["Історик", "історик"]}})
             return
-
-        await self.db.recruitment_nodes.delete_many({})
 
         async def insert_branch(node: dict, parent_id=None):
             doc = {
@@ -407,6 +377,62 @@ class Database:
     async def get_recruitment_node(self, node_id: str):
         from bson import ObjectId
         return await self.db.recruitment_nodes.find_one({"_id": ObjectId(node_id)})
+
+    async def get_recruitment_full_tree(self):
+        nodes = await self.db.recruitment_nodes.find().to_list(length=None)
+        by_parent: dict[str | None, list[dict]] = {}
+
+        for node in nodes:
+            parent_id = str(node["parent_id"]) if node.get("parent_id") else None
+            by_parent.setdefault(parent_id, []).append(node)
+
+        for parent_key in by_parent:
+            by_parent[parent_key].sort(key=lambda item: item["name"])
+
+        def build(parent_id: str | None):
+            result = []
+            for node in by_parent.get(parent_id, []):
+                item = {
+                    "_id": node["_id"],
+                    "name": node["name"],
+                    "kind": node.get("kind"),
+                    "parent_id": node.get("parent_id"),
+                    "children": build(str(node["_id"])),
+                }
+                result.append(item)
+            return result
+
+        return build(None)
+
+    async def rename_recruitment_node(self, node_id: str, new_name: str):
+        from bson import ObjectId
+        await self.db.recruitment_nodes.update_one(
+            {"_id": ObjectId(node_id)},
+            {"$set": {"name": new_name.strip()}},
+        )
+
+    async def delete_recruitment_node(self, node_id: str):
+        from bson import ObjectId
+
+        root_id = ObjectId(node_id)
+        all_nodes = await self.db.recruitment_nodes.find().to_list(length=None)
+        by_parent: dict[str, list[dict]] = {}
+        for node in all_nodes:
+            parent_id = node.get("parent_id")
+            if parent_id:
+                by_parent.setdefault(str(parent_id), []).append(node)
+
+        to_delete = [root_id]
+        queue = [str(root_id)]
+        while queue:
+            current_id = queue.pop(0)
+            children = by_parent.get(current_id, [])
+            for child in children:
+                child_id = child["_id"]
+                to_delete.append(child_id)
+                queue.append(str(child_id))
+
+        await self.db.recruitment_nodes.delete_many({"_id": {"$in": to_delete}})
 
     async def get_recruitment_path(self, node_id: str):
         from bson import ObjectId

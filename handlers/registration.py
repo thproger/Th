@@ -3,6 +3,7 @@ from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKe
 from aiogram.filters import CommandStart, Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
+from html import escape
 
 from database import db
 from config import ROLE_LABELS
@@ -35,9 +36,9 @@ class RecruitFlowStates(StatesGroup):
 
 
 class RecruitAdminStates(StatesGroup):
-    waiting_parent_for_group = State()
-    waiting_parent_for_position = State()
+    waiting_parent = State()
     waiting_name = State()
+    waiting_new_name = State()
 
 WELCOME_NEW = """👋 <b>Вітаю!</b>
 
@@ -372,20 +373,75 @@ async def send_application_to_reviewers(message: Message, notify_text: str):
         pass
 
 
+def _recruit_admin_menu_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📊 Загальна аналітика", callback_data="recruit_admin:analytics")],
+        [InlineKeyboardButton(text="📄 Останні заявки", callback_data="recruit_admin:list")],
+        [InlineKeyboardButton(text="🌳 Дерево спеціальностей", callback_data="recruit_admin:tree")],
+        [InlineKeyboardButton(text="➕ Додати категорію", callback_data="recruit_admin:add_category")],
+        [InlineKeyboardButton(text="➕ Додати групу", callback_data="recruit_admin:add_group")],
+        [InlineKeyboardButton(text="➕ Додати посаду", callback_data="recruit_admin:add_position")],
+        [InlineKeyboardButton(text="✏️ Редагувати елемент", callback_data="recruit_admin:rename")],
+        [InlineKeyboardButton(text="🗑 Видалити елемент", callback_data="recruit_admin:delete")],
+    ])
+
+
+def _recruit_admin_back_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="⬅️ Назад", callback_data="recruit_admin:menu")],
+        [InlineKeyboardButton(text="❌ Відмінити", callback_data="recruit_admin:cancel")],
+    ])
+
+
+def _flatten_recruitment_nodes(nodes: list[dict], depth: int = 0) -> list[dict]:
+    result: list[dict] = []
+    for node in nodes:
+        result.append({
+            "id": str(node["_id"]),
+            "name": node["name"],
+            "kind": node.get("kind"),
+            "depth": depth,
+        })
+        result.extend(_flatten_recruitment_nodes(node.get("children", []), depth + 1))
+    return result
+
+
+def _node_picker_keyboard(flat_nodes: list[dict], callback_prefix: str) -> InlineKeyboardMarkup:
+    buttons = []
+    for item in flat_nodes[:90]:
+        icon = "📁" if item.get("kind") == "group" else "💼"
+        indent = "· " * item["depth"]
+        buttons.append([
+            InlineKeyboardButton(
+                text=f"{indent}{icon} {item['name']}"[:64],
+                callback_data=f"{callback_prefix}:{item['id']}",
+            )
+        ])
+    buttons.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="recruit_admin:menu")])
+    buttons.append([InlineKeyboardButton(text="❌ Відмінити", callback_data="recruit_admin:cancel")])
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
+def _render_recruitment_tree(nodes: list[dict], prefix: str = "") -> list[str]:
+    lines: list[str] = []
+    total = len(nodes)
+    for idx, node in enumerate(nodes):
+        is_last = idx == total - 1
+        branch = "└─ " if is_last else "├─ "
+        icon = "📁" if node.get("kind") == "group" else "💼"
+        lines.append(f"{prefix}{branch}{icon} {escape(node['name'])}")
+        child_prefix = f"{prefix}{'   ' if is_last else '│  '}"
+        lines.extend(_render_recruitment_tree(node.get("children", []), child_prefix))
+    return lines
+
+
 @router.message(F.text == BTN_RECRUITING_ADMIN)
 async def recruit_admin_menu(message: Message):
     user = await db.get_user(message.from_user.id)
     if not user or not has_role(user.get("role"), ROLE_ADMIN):
         await message.answer("❌ Немає доступу.")
         return
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="📊 Загальна аналітика", callback_data="recruit_admin:analytics")],
-        [InlineKeyboardButton(text="📄 Останні заявки", callback_data="recruit_admin:list")],
-        [InlineKeyboardButton(text="➕ Додати категорію", callback_data="recruit_admin:add_category")],
-        [InlineKeyboardButton(text="➕ Додати групу", callback_data="recruit_admin:add_group")],
-        [InlineKeyboardButton(text="➕ Додати посаду", callback_data="recruit_admin:add_position")],
-    ])
-    await message.answer("Адмін-розділ заявок:", reply_markup=keyboard)
+    await message.answer("Адмін-розділ заявок:", reply_markup=_recruit_admin_menu_keyboard())
 
 
 @router.callback_query(F.data.startswith("recruit_admin:"))
@@ -396,6 +452,16 @@ async def recruit_admin_action(callback: CallbackQuery, state: FSMContext):
         return
     action = callback.data.split(":")[1]
     await state.clear()
+
+    if action == "menu":
+        await callback.message.edit_text("Адмін-розділ заявок:", reply_markup=_recruit_admin_menu_keyboard())
+        await callback.answer()
+        return
+
+    if action == "cancel":
+        await callback.message.edit_text("❌ Дію скасовано.", reply_markup=_recruit_admin_menu_keyboard())
+        await callback.answer()
+        return
 
     if action == "analytics":
         analytics = await db.get_application_analytics()
@@ -410,7 +476,11 @@ async def recruit_admin_action(callback: CallbackQuery, state: FSMContext):
             lines.extend([f"• {item['_id']}: {item['count']}" for item in analytics["by_type"]])
         else:
             lines.append("• Даних ще немає")
-        await callback.message.edit_text("\n".join(lines), parse_mode="HTML")
+        await callback.message.edit_text(
+            "\n".join(lines),
+            parse_mode="HTML",
+            reply_markup=_recruit_admin_back_keyboard(),
+        )
         await callback.answer()
         return
 
@@ -426,30 +496,56 @@ async def recruit_admin_action(callback: CallbackQuery, state: FSMContext):
             tg_ref = f"@{username}" if username else f"ID:{app['applicant_id']}"
             path = " → ".join(app.get("selections", []))
             lines.append(f"• {app.get('full_name')} | {tg_ref}\n  Тип: {app.get('application_type')} | {path}")
-        await callback.message.edit_text("\n".join(lines), parse_mode="HTML")
+        await callback.message.edit_text(
+            "\n".join(lines),
+            parse_mode="HTML",
+            reply_markup=_recruit_admin_back_keyboard(),
+        )
+        await callback.answer()
+        return
+
+    if action == "tree":
+        tree = await db.get_recruitment_full_tree()
+        if not tree:
+            await callback.message.edit_text(
+                "Дерево набору ще порожнє.",
+                reply_markup=_recruit_admin_back_keyboard(),
+            )
+            await callback.answer()
+            return
+        lines = ["🌳 <b>Дерево спеціальностей для набору</b>", ""]
+        lines.extend(_render_recruitment_tree(tree))
+        await callback.message.edit_text(
+            "\n".join(lines),
+            parse_mode="HTML",
+            reply_markup=_recruit_admin_back_keyboard(),
+        )
         await callback.answer()
         return
 
     if action == "add_category":
-        await state.update_data(add_kind="category", parent_id=None)
+        await state.update_data(add_kind="group", parent_id=None, add_label="категорію")
         await state.set_state(RecruitAdminStates.waiting_name)
-        await callback.message.edit_text("Введіть назву нової категорії:")
+        await callback.message.edit_text("Введіть назву нової категорії (верхній рівень):")
         await callback.message.answer("Для скасування натисніть кнопку нижче.", reply_markup=cancel_keyboard())
         await callback.answer()
         return
 
     if action == "add_group":
-        categories = await db.get_recruitment_nodes_by_kind("category")
-        if not categories:
+        groups = await db.get_recruitment_nodes_by_kind("group")
+        if not groups:
             await callback.answer("Спочатку створіть категорію.", show_alert=True)
             return
-        await state.update_data(add_kind="group")
-        await state.set_state(RecruitAdminStates.waiting_parent_for_group)
+        await state.update_data(add_kind="group", add_label="групу")
+        await state.set_state(RecruitAdminStates.waiting_parent)
         await callback.message.edit_text(
             "Оберіть батьківський елемент для групи:",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(text=node["name"], callback_data=f"recruit_parent:{str(node['_id'])}")]
-                for node in categories
+                for node in groups[:90]
+            ] + [
+                [InlineKeyboardButton(text="⬅️ Назад", callback_data="recruit_admin:menu")],
+                [InlineKeyboardButton(text="❌ Відмінити", callback_data="recruit_admin:cancel")],
             ]),
         )
         await callback.answer()
@@ -460,14 +556,44 @@ async def recruit_admin_action(callback: CallbackQuery, state: FSMContext):
         if not groups:
             await callback.answer("Спочатку створіть групу.", show_alert=True)
             return
-        await state.update_data(add_kind="position")
-        await state.set_state(RecruitAdminStates.waiting_parent_for_position)
+        await state.update_data(add_kind="position", add_label="посаду")
+        await state.set_state(RecruitAdminStates.waiting_parent)
         await callback.message.edit_text(
             "Оберіть батьківську групу для посади:",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(text=node["name"], callback_data=f"recruit_parent:{str(node['_id'])}")]
-                for node in groups[:70]
+                for node in groups[:90]
+            ] + [
+                [InlineKeyboardButton(text="⬅️ Назад", callback_data="recruit_admin:menu")],
+                [InlineKeyboardButton(text="❌ Відмінити", callback_data="recruit_admin:cancel")],
             ]),
+        )
+        await callback.answer()
+        return
+
+    if action == "rename":
+        tree = await db.get_recruitment_full_tree()
+        flat_nodes = _flatten_recruitment_nodes(tree)
+        if not flat_nodes:
+            await callback.answer("Немає елементів для редагування.", show_alert=True)
+            return
+        await state.set_state(RecruitAdminStates.waiting_new_name)
+        await callback.message.edit_text(
+            "Оберіть елемент для перейменування:",
+            reply_markup=_node_picker_keyboard(flat_nodes, "recruit_admin_pick_rename"),
+        )
+        await callback.answer()
+        return
+
+    if action == "delete":
+        tree = await db.get_recruitment_full_tree()
+        flat_nodes = _flatten_recruitment_nodes(tree)
+        if not flat_nodes:
+            await callback.answer("Немає елементів для видалення.", show_alert=True)
+            return
+        await callback.message.edit_text(
+            "Оберіть елемент для видалення (разом із підпунктами):",
+            reply_markup=_node_picker_keyboard(flat_nodes, "recruit_admin_pick_delete"),
         )
         await callback.answer()
         return
@@ -475,8 +601,7 @@ async def recruit_admin_action(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
 
 
-@router.callback_query(F.data.startswith("recruit_parent:"), RecruitAdminStates.waiting_parent_for_group)
-@router.callback_query(F.data.startswith("recruit_parent:"), RecruitAdminStates.waiting_parent_for_position)
+@router.callback_query(F.data.startswith("recruit_parent:"), RecruitAdminStates.waiting_parent)
 async def recruit_admin_choose_parent(callback: CallbackQuery, state: FSMContext):
     parent_id = callback.data.split(":")[1]
     await state.update_data(parent_id=parent_id)
@@ -487,8 +612,8 @@ async def recruit_admin_choose_parent(callback: CallbackQuery, state: FSMContext
 
 
 @router.message(RecruitAdminStates.waiting_name, F.text == BTN_CANCEL)
-@router.message(RecruitAdminStates.waiting_parent_for_group, F.text == BTN_CANCEL)
-@router.message(RecruitAdminStates.waiting_parent_for_position, F.text == BTN_CANCEL)
+@router.message(RecruitAdminStates.waiting_parent, F.text == BTN_CANCEL)
+@router.message(RecruitAdminStates.waiting_new_name, F.text == BTN_CANCEL)
 async def recruit_admin_cancel(message: Message, state: FSMContext):
     user = await db.get_user(message.from_user.id)
     role = (user or {}).get("role", "member")
@@ -505,6 +630,7 @@ async def recruit_admin_save_node(message: Message, state: FSMContext):
 
     data = await state.get_data()
     add_kind = data.get("add_kind")
+    add_label = data.get("add_label", "елемент")
     parent_id = data.get("parent_id")
     name = (message.text or "").strip()
     if len(name) < 2:
@@ -518,4 +644,69 @@ async def recruit_admin_save_node(message: Message, state: FSMContext):
         return
 
     await state.clear()
-    await message.answer(f"✅ Додано: <b>{node['name']}</b> ({add_kind})", parse_mode="HTML")
+    await message.answer(f"✅ Успішно додано <b>{add_label}</b>: <b>{node['name']}</b>", parse_mode="HTML")
+
+
+@router.callback_query(F.data.startswith("recruit_admin_pick_rename:"))
+async def recruit_admin_pick_rename(callback: CallbackQuery, state: FSMContext):
+    user = await db.get_user(callback.from_user.id)
+    if not user or not has_role(user.get("role"), ROLE_ADMIN):
+        await callback.answer("❌ Немає доступу.", show_alert=True)
+        return
+    node_id = callback.data.split(":")[1]
+    node = await db.get_recruitment_node(node_id)
+    if not node:
+        await callback.answer("Елемент не знайдено.", show_alert=True)
+        return
+    await state.update_data(rename_node_id=node_id)
+    await state.set_state(RecruitAdminStates.waiting_new_name)
+    await callback.message.edit_text(
+        f"Поточна назва: <b>{escape(node['name'])}</b>\nВведіть нову назву:",
+        parse_mode="HTML",
+    )
+    await callback.message.answer("Для скасування натисніть кнопку нижче.", reply_markup=cancel_keyboard())
+    await callback.answer()
+
+
+@router.message(RecruitAdminStates.waiting_new_name)
+async def recruit_admin_save_renamed_node(message: Message, state: FSMContext):
+    user = await db.get_user(message.from_user.id)
+    if not user or not has_role(user.get("role"), ROLE_ADMIN):
+        await message.answer("❌ Немає доступу.")
+        return
+    data = await state.get_data()
+    node_id = data.get("rename_node_id")
+    if not node_id:
+        await message.answer("Помилка стану. Спробуйте знову з адмін-меню.")
+        return
+    new_name = (message.text or "").strip()
+    if len(new_name) < 2:
+        await message.answer("Назва занадто коротка. Спробуйте ще раз.")
+        return
+    try:
+        await db.rename_recruitment_node(node_id=node_id, new_name=new_name)
+    except Exception:
+        await message.answer("Не вдалося перейменувати елемент (можливо, така назва вже існує).")
+        return
+    await state.clear()
+    await message.answer(f"✅ Елемент перейменовано на: <b>{escape(new_name)}</b>", parse_mode="HTML")
+
+
+@router.callback_query(F.data.startswith("recruit_admin_pick_delete:"))
+async def recruit_admin_delete_node(callback: CallbackQuery, state: FSMContext):
+    user = await db.get_user(callback.from_user.id)
+    if not user or not has_role(user.get("role"), ROLE_ADMIN):
+        await callback.answer("❌ Немає доступу.", show_alert=True)
+        return
+    node_id = callback.data.split(":")[1]
+    node = await db.get_recruitment_node(node_id)
+    if not node:
+        await callback.answer("Елемент не знайдено.", show_alert=True)
+        return
+    await db.delete_recruitment_node(node_id)
+    await state.clear()
+    await callback.message.edit_text(
+        f"✅ Видалено елемент <b>{escape(node['name'])}</b> і всі його підпункти.",
+        parse_mode="HTML",
+    )
+    await callback.answer()
